@@ -39,8 +39,8 @@ A WhatsApp marketing SaaS tool that competes with Wati and AiSensy. Allows busin
 ### Frontend
 | Layer | Technology | Notes |
 |---|---|---|
-| Framework | Next.js 14 | App Router |
-| UI | Tailwind CSS + shadcn/ui | |
+| Framework | Next.js 16 | App Router, Turbopack, React 19 |
+| UI | Tailwind CSS v4 + shadcn/ui | OKLCH semantic theme tokens; swappable `data-theme` presets |
 | State | TanStack Query (React Query) | Server state, caching |
 | Auth | httpOnly cookie with JWT | |
 | Realtime | EventSource (native) | SSE connection for inbox |
@@ -194,7 +194,10 @@ lib/
 ├── hooks/
 │   ├── useSSE.ts                — SSE connection hook for inbox
 │   └── useWorkspace.ts          — current workspace context
-middleware.ts                    — redirect unauthenticated to /login
+proxy.ts                         — route gate, redirect unauthenticated to /login
+                                   (Next.js 16 renamed `middleware.ts` → `proxy.ts`)
+app/bff/[...path]/route.ts        — BFF proxy: forwards client calls to the API with the
+                                   JWT from the httpOnly cookie (token never reaches the browser)
 ```
 
 ---
