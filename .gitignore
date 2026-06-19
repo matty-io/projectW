@@ -1,0 +1,21 @@
+# Top-level workspace ignores. Each sub-repo (whatsapp-tool-api, whatsapp-tool-web)
+# has its own .gitignore and is its own git repository.
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Local env / secrets
+.env
+.env.local
+*.local.env
+
+# Claude local overrides (settings.json is shared/committed; .local.json is not)
+.claude/settings.local.json
+
+# Sub-repositories are tracked in their OWN git repos, not this umbrella repo.
+/whatsapp-tool-api/
+/whatsapp-tool-web/
