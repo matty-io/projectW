@@ -726,10 +726,14 @@ GET    /api/workspaces                    — all workspaces for current user
 POST   /api/workspaces                    — create new workspace
 GET    /api/workspaces/{id}
 PUT    /api/workspaces/{id}
+POST   /api/workspaces/{id}/switch        — re-issue JWT scoped to this workspace (switch active)
 GET    /api/workspaces/{id}/members
 POST   /api/workspaces/{id}/members/invite — send email invite
 DELETE /api/workspaces/{id}/members/{userId}
 PUT    /api/workspaces/{id}/members/{userId}/role
+GET    /api/workspaces/{id}/invitations   — list pending invitations
+DELETE /api/workspaces/{id}/invitations/{invitationId} — revoke a pending invite
+POST   /api/invitations/accept            — accept an invite by token (public; auto-logs in)
 ```
 
 ### WhatsApp Connection
