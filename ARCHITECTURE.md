@@ -627,8 +627,31 @@ if (!withinWindow) {
 
 ### Base URL
 ```
-https://graph.facebook.com/v19.0/
+https://graph.facebook.com/v23.0/
 ```
+
+### Onboarding a customer's WABA — Embedded Signup (primary path)
+We are a Meta **Tech Provider**. Customers connect their own WhatsApp Business Account through
+Meta's hosted **Embedded Signup** popup — never by pasting ids/tokens. Prerequisites (Meta App
+dashboard, one-time): Tech Provider + verified business; advanced access to
+`whatsapp_business_management` **and** `whatsapp_business_messaging`; a Facebook Login for Business
+configuration (yields a `config_id`); app Live.
+
+Flow:
+1. **Browser** loads the FB JS SDK, `FB.init({appId, version})`, then on click runs
+   `FB.login(cb, {config_id, response_type:'code', override_default_response_type:true,
+   extras:{setup:{}, featureType:'', sessionInfoVersion:'3'}})`.
+2. A `message` event (`WA_EMBEDDED_SIGNUP` / `FINISH`) returns `waba_id` + `phone_number_id`; the
+   `FB.login` callback returns a one-time `authResponse.code`. All three POST to
+   `/api/wa/embedded-signup`.
+3. **Backend** (`MetaOnboardingClient`):
+   - `GET /oauth/access_token?client_id={app_id}&client_secret={app_secret}&code={code}` → business token.
+   - `POST /{waba_id}/subscribed_apps` (Bearer token) → routes the WABA's webhooks to us.
+   - `POST /{phone_number_id}/register` `{messaging_product:"whatsapp", pin}` → enable Cloud API sending (best-effort).
+   - `GET /{waba_id}?fields=name` + `GET /{phone_number_id}?fields=display_phone_number,verified_name` → display metadata.
+   - Persist via `WaAccountService` (encrypted token, 1:1 invariant). The customer types nothing.
+
+`POST /api/wa/connect` remains as a manual fallback for test numbers / system-user tokens.
 
 ### Sending a Template Message
 ```
@@ -738,7 +761,9 @@ POST   /api/invitations/accept            — accept an invite by token (public;
 
 ### WhatsApp Connection
 ```
-POST   /api/wa/connect                    — save phone_number_id + access_token
+POST   /api/wa/embedded-signup            — complete Embedded Signup: {code, wabaId, phoneNumberId}
+                                            (primary onboarding — see §6)
+POST   /api/wa/connect                    — manual fallback: save phone_number_id + access_token
 GET    /api/wa/account                    — get WABA + phone numbers for current workspace
 GET    /api/wa/numbers                    — list phone numbers
 POST   /api/wa/numbers/{id}/set-default
@@ -967,11 +992,14 @@ jwt:
 
 meta:
   api:
-    base-url: https://graph.facebook.com/v19.0
+    base-url: https://graph.facebook.com/v23.0
   webhook:
     verify-token: ${META_VERIFY_TOKEN}
   app:
+    id: ${META_APP_ID}
     secret: ${META_APP_SECRET}
+  embedded-signup:
+    phone-pin: ${META_PHONE_PIN:000000}
 
 aws:
   region: ${AWS_REGION:ap-south-1}
