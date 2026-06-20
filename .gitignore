@@ -16,6 +16,9 @@ Thumbs.db
 # Claude local overrides (settings.json is shared/committed; .local.json is not)
 .claude/settings.local.json
 
+# Playwright MCP local output
+.playwright-mcp/
+
 # Sub-repositories are tracked in their OWN git repos, not this umbrella repo.
 /whatsapp-tool-api/
 /whatsapp-tool-web/
