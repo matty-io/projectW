@@ -28,6 +28,7 @@ locking before launch sets pricing expectations — even though the *code* lands
 | # | Plan | Why it matters | Impact | Size |
 |---|---|---|---|---|
 | 1 | [WhatsApp Flows (native forms)](growth-01-whatsapp-flows.md) | Booking/lead-gen; Meta hosts rendering → best ROI:effort, fast win | ★★★★ | S–M |
+| 1b | [Attach a Flow to a campaign](growth-01b-flow-campaign-attach.md) | Phase B follow-up; initiate flows to a whole audience outside the 24h window | ★★★ | S–M |
 | 2 | [No-code flow builder](growth-02-flow-builder.md) | Category's #1 buying criterion; foundation for automation + AI | ★★★★★ | L–XL |
 | 3 | [Shopify + abandoned-cart recovery](growth-03-shopify-cart-recovery.md) | Direct ROI story for the core D2C target | ★★★★★ | M–L |
 | 4 | [Public API + webhooks + Zapier/Make](growth-04-integrations-api-zapier.md) | Unlocks long-tail integrations cheaply; qualifying criterion | ★★★ | M |
