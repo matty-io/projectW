@@ -336,7 +336,6 @@ CREATE TABLE wa_business_accounts (
     meta_business_portfolio_id VARCHAR(100),
     waba_id VARCHAR(100) UNIQUE NOT NULL,
     display_name VARCHAR(100),
-    access_token TEXT NOT NULL,  -- store encrypted
     business_verified BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
@@ -680,9 +679,9 @@ Flow:
   - `POST /{waba_id}/subscribed_apps` (Bearer token) → routes the WABA's webhooks to us.
   - `POST /{phone_number_id}/register` `{messaging_product:"whatsapp", pin}` → enable Cloud API sending (best-effort).
   - `GET /{waba_id}?fields=name` + `GET /{phone_number_id}?fields=display_phone_number,verified_name` → display metadata.
-  - Persist via `WaAccountService` (encrypted token, 1:1 invariant). The customer types nothing.
+  - Persist via `WaAccountService` (1:1 invariant). The customer types nothing; runtime Graph calls use the configured system-user token (`META_SYSTEM_USER_TOKEN`) rather than storing a per-WABA token.
 
-`POST /api/wa/connect` remains as a manual fallback for test numbers / system-user tokens.
+`POST /api/wa/connect` remains as a manual fallback for customers who have already added our system user / app to the WABA in Meta Business Suite; the backend verifies access with `META_SYSTEM_USER_TOKEN`, subscribes the app, and then saves the WABA + phone number details.
 
 ### Sending a Template Message
 
@@ -802,7 +801,7 @@ POST   /api/invitations/accept            — accept an invite by token (public;
 ```
 POST   /api/wa/embedded-signup            — complete Embedded Signup: {code, wabaId, phoneNumberId}
                                             (primary onboarding — see §6)
-POST   /api/wa/connect                    — manual fallback: save phone_number_id + access_token
+POST   /api/wa/connect                    — manual fallback: verify system-user access, subscribe app, save phone_number_id
 GET    /api/wa/account                    — get WABA + phone numbers for current workspace
 GET    /api/wa/numbers                    — list phone numbers
 POST   /api/wa/numbers/{id}/set-default
@@ -1053,6 +1052,7 @@ meta:
   app:
     id: ${META_APP_ID}
     secret: ${META_APP_SECRET}
+  system-user-token: ${META_SYSTEM_USER_TOKEN}
   embedded-signup:
     phone-pin: ${META_PHONE_PIN:000000}
 
@@ -1247,4 +1247,3 @@ Week 8: Convert to paid — target ₹25k MRR
 6. **Return 200 to Meta webhook within 5 seconds** — always process async
 7. **Verify X-Hub-Signature-256 on every POST /webhook** — reject 403 if invalid
 8. **Contacts from different workspaces are completely isolated** — every query includes workspace_id filter
-
