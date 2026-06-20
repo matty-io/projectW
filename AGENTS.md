@@ -32,6 +32,10 @@ projectW/
 7. **Verify `X-Hub-Signature-256` on every `POST /webhook`** — reject with 403 if invalid.
 8. **Contacts (and all data) are isolated per workspace** — every query includes a `workspace_id` filter.
 
+## Schema documentation rule
+
+- When you change the database schema, update [`schema.dbml`](/Users/matty/Work/projectW/schema.dbml) in the same change set.
+
 ## Multi-tenancy model (applies everywhere)
 
 - Every domain row (except junction tables) carries `workspace_id`.

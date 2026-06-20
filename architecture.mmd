@@ -1,0 +1,12 @@
+flowchart LR
+  Client["Client"]
+  Server["Server"]
+  DB["PostgreSQL DB"]
+  S3["AWS S3"]
+  Queue["Queue"]
+
+  Client --> Server
+  Server --> DB
+  Server --> S3
+  Server --> Queue
+  Queue --> Server

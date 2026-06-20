@@ -1,4 +1,5 @@
 # WhatsApp Marketing Tool — Architecture & Requirements
+
 > Complete reference document for implementation. Share this with Claude Code at the start of every session.
 
 ---
@@ -6,6 +7,7 @@
 ## 1. Product Overview
 
 A WhatsApp marketing SaaS tool that competes with Wati and AiSensy. Allows businesses to:
+
 - Send bulk broadcast campaigns via WhatsApp Business API
 - Manage a shared team inbox for customer conversations
 - Create and manage Meta-approved message templates
@@ -15,6 +17,7 @@ A WhatsApp marketing SaaS tool that competes with Wati and AiSensy. Allows busin
 **Target customers:** D2C brands, coaching businesses, clinics, real estate agents — any business already using WhatsApp manually to sell or support.
 
 **Pricing:**
+
 - Starter: ₹999/month — 3 agents, 5,000 messages/month
 - Pro: ₹2,499/month — 10 agents, unlimited messages
 - Agency: ₹5,999/month — multi-workspace, white-label
@@ -24,47 +27,59 @@ A WhatsApp marketing SaaS tool that competes with Wati and AiSensy. Allows busin
 ## 2. Tech Stack
 
 ### Backend
-| Layer | Technology | Notes |
-|---|---|---|
-| Framework | Spring Boot 3 | Java 21, virtual threads enabled |
-| Security | Spring Security + JWT | Stateless, workspace-scoped tokens |
-| Database | Spring Data JPA + Hibernate | Flyway for migrations |
-| Queue | AWS SQS via Spring Cloud AWS 3.1 | Broadcast fan-out engine |
-| Storage | AWS S3 | CSV uploads, template media |
-| Realtime | SSE via SseEmitter | Live inbox updates |
-| Scheduler | Spring @Scheduled | Campaign scheduling, polling |
-| HTTP Client | RestClient (Spring 6) | Meta Cloud API calls |
-| Email | AWS SES | Team invites, billing receipts |
+
+
+| Layer       | Technology                       | Notes                              |
+| ----------- | -------------------------------- | ---------------------------------- |
+| Framework   | Spring Boot 3                    | Java 21, virtual threads enabled   |
+| Security    | Spring Security + JWT            | Stateless, workspace-scoped tokens |
+| Database    | Spring Data JPA + Hibernate      | Flyway for migrations              |
+| Queue       | AWS SQS via Spring Cloud AWS 3.1 | Broadcast fan-out engine           |
+| Storage     | AWS S3                           | CSV uploads, template media        |
+| Realtime    | SSE via SseEmitter               | Live inbox updates                 |
+| Scheduler   | Spring @Scheduled                | Campaign scheduling, polling       |
+| HTTP Client | RestClient (Spring 6)            | Meta Cloud API calls               |
+| Email       | AWS SES                          | Team invites, billing receipts     |
+
 
 ### Frontend
-| Layer | Technology | Notes |
-|---|---|---|
-| Framework | Next.js 16 | App Router, Turbopack, React 19 |
-| UI | Tailwind CSS v4 + shadcn/ui | OKLCH semantic theme tokens; swappable `data-theme` presets |
-| State | TanStack Query (React Query) | Server state, caching |
-| Auth | httpOnly cookie with JWT | |
-| Realtime | EventSource (native) | SSE connection for inbox |
-| Deploy | Vercel | |
+
+
+| Layer     | Technology                   | Notes                                                       |
+| --------- | ---------------------------- | ----------------------------------------------------------- |
+| Framework | Next.js 16                   | App Router, Turbopack, React 19                             |
+| UI        | Tailwind CSS v4 + shadcn/ui  | OKLCH semantic theme tokens; swappable `data-theme` presets |
+| State     | TanStack Query (React Query) | Server state, caching                                       |
+| Auth      | httpOnly cookie with JWT     |                                                             |
+| Realtime  | EventSource (native)         | SSE connection for inbox                                    |
+| Deploy    | Vercel                       |                                                             |
+
 
 ### Infrastructure
-| Service | Tool | Notes |
-|---|---|---|
-| Database | AWS RDS PostgreSQL 15 | db.t3.micro to start |
-| Queue | AWS SQS | Standard queue, not FIFO |
-| Storage | AWS S3 | ap-south-1 region |
-| Backend deploy | AWS ECS Fargate | Docker container |
-| Frontend deploy | Vercel | Auto-deploy on push |
-| Payments | Razorpay | Subscriptions |
-| Error tracking | Sentry | Both frontend and backend |
-| WhatsApp | Meta Cloud API | Direct, no BSP middleman |
+
+
+| Service         | Tool                  | Notes                     |
+| --------------- | --------------------- | ------------------------- |
+| Database        | AWS RDS PostgreSQL 15 | db.t3.micro to start      |
+| Queue           | AWS SQS               | Standard queue, not FIFO  |
+| Storage         | AWS S3                | ap-south-1 region         |
+| Backend deploy  | AWS ECS Fargate       | Docker container          |
+| Frontend deploy | Vercel                | Auto-deploy on push       |
+| Payments        | Razorpay              | Subscriptions             |
+| Error tracking  | Sentry                | Both frontend and backend |
+| WhatsApp        | Meta Cloud API        | Direct, no BSP middleman  |
+
 
 ### Local Development
-| Service | Tool |
-|---|---|
-| Database | Docker — postgres:15-alpine |
-| SQS + S3 | Docker — LocalStack |
-| Email | Docker — Mailpit (localhost:8025) |
-| Meta webhooks | ngrok → localhost:8080 |
+
+
+| Service       | Tool                              |
+| ------------- | --------------------------------- |
+| Database      | Docker — postgres:15-alpine       |
+| SQS + S3      | Docker — LocalStack               |
+| Email         | Docker — Mailpit (localhost:8025) |
+| Meta webhooks | ngrok → localhost:8080            |
+
 
 ---
 
@@ -78,6 +93,7 @@ whatsapp-tool-web/          ← Next.js frontend
 ```
 
 ### Backend Package Structure
+
 ```
 src/main/java/com/watools/
 ├── config/
@@ -167,6 +183,7 @@ src/main/java/com/watools/
 ```
 
 ### Frontend Structure
+
 ```
 app/
 ├── (auth)/
@@ -205,6 +222,7 @@ app/bff/[...path]/route.ts        — BFF proxy: forwards client calls to the AP
 ## 4. Database Schema
 
 ### Design Decisions
+
 - All tables use `uuid` primary keys with `gen_random_uuid()` default
 - All timestamps use `timestamptz`
 - Every table (except junction tables) has `workspace_id` for multi-tenancy
@@ -215,6 +233,7 @@ app/bff/[...path]/route.ts        — BFF proxy: forwards client calls to the AP
 - `workspace_id` is denormalized on `messages` for fast inbox queries
 
 ### Entity Hierarchy
+
 ```
 organizations (SaaS billing entity)
     └── users (members of the org)
@@ -233,6 +252,7 @@ organizations (SaaS billing entity)
 ```
 
 ### Key Relationship Rules
+
 - `workspace ↔ wa_business_account` is **strictly 1:1** enforced by UNIQUE constraint
 - `wa_business_account → wa_phone_numbers` is **1:many**
 - `conversations` are unique per `(phone_number_id, contact_id)` — one conversation per contact per number
@@ -506,12 +526,14 @@ CREATE INDEX quick_replies_ws_idx ON quick_replies(workspace_id);
 ## 5. Architecture Decisions
 
 ### Multi-tenancy
+
 - Every query filters by `workspace_id`
 - JWT contains `userId` and `workspaceId` (current active workspace)
 - Service layer validates that the requested resource belongs to the JWT's `workspaceId`
 - Users can belong to multiple workspaces — switch via workspace selector in UI
 
 ### Workspace ↔ WABA Relationship
+
 - **Strictly 1:1** — one workspace owns exactly one WABA
 - Enforced by `UNIQUE` constraint on `wa_business_accounts.workspace_id`
 - If a customer needs two brands/WABAs, they create two workspaces
@@ -520,6 +542,7 @@ CREATE INDEX quick_replies_ws_idx ON quick_replies(workspace_id);
 - Templates are scoped to `waba_id` (Meta requirement — templates are per WABA)
 
 ### Broadcast Engine (SQS)
+
 ```
 POST /campaigns/{id}/send
     ↓
@@ -549,6 +572,7 @@ Atomic counter: UPDATE campaigns SET sent_count = sent_count + 1
 **Crash recovery:** If consumer crashes mid-campaign, SQS redelivers unacknowledged messages. `wa_message_id` uniqueness check prevents duplicates.
 
 ### Campaign Scheduling
+
 ```
 @Scheduled(fixedDelay = 60000)  — runs every 60 seconds
     ↓
@@ -559,6 +583,7 @@ For each due campaign: call initiateSend() → SQS fan-out
 ```
 
 ### Webhook Processing
+
 ```
 Meta POST /webhook
     ↓
@@ -583,6 +608,7 @@ statuses[] → handleStatusUpdate()
 ```
 
 ### SSE (Server-Sent Events) for Live Inbox
+
 - `SseService` maintains `Map<String, List<SseEmitter>>` keyed by `workspaceId`
 - On new inbound message or conversation update: push to all emitters for that workspace
 - Frontend uses native `EventSource` API
@@ -590,6 +616,7 @@ statuses[] → handleStatusUpdate()
 - **Single instance only for MVP** — if scaling to multiple ECS tasks later, add Redis Pub/Sub
 
 ### 24-Hour Window Enforcement
+
 ```java
 // Before every agent reply:
 boolean withinWindow = conversation.getLastCustomerMessageAt() != null
@@ -602,6 +629,7 @@ if (!withinWindow) {
 ```
 
 ### JWT Structure
+
 ```json
 {
   "sub": "userId",
@@ -613,6 +641,7 @@ if (!withinWindow) {
 ```
 
 ### Security Rules
+
 - All `/api/**` endpoints require valid JWT
 - `GET /webhook` and `POST /webhook` are public (verified by Meta signature)
 - `POST /auth/login` and `POST /auth/signup` are public
@@ -626,11 +655,13 @@ if (!withinWindow) {
 ## 6. Meta Cloud API Integration
 
 ### Base URL
+
 ```
 https://graph.facebook.com/v23.0/
 ```
 
 ### Onboarding a customer's WABA — Embedded Signup (primary path)
+
 We are a Meta **Tech Provider**. Customers connect their own WhatsApp Business Account through
 Meta's hosted **Embedded Signup** popup — never by pasting ids/tokens. Prerequisites (Meta App
 dashboard, one-time): Tech Provider + verified business; advanced access to
@@ -638,22 +669,23 @@ dashboard, one-time): Tech Provider + verified business; advanced access to
 configuration (yields a `config_id`); app Live.
 
 Flow:
+
 1. **Browser** loads the FB JS SDK, `FB.init({appId, version})`, then on click runs
-   `FB.login(cb, {config_id, response_type:'code', override_default_response_type:true,
-   extras:{setup:{}, featureType:'', sessionInfoVersion:'3'}})`.
+  `FB.login(cb, {config_id, response_type:'code', override_default_response_type:true,  extras:{setup:{}, featureType:'', sessionInfoVersion:'3'}})`.
 2. A `message` event (`WA_EMBEDDED_SIGNUP` / `FINISH`) returns `waba_id` + `phone_number_id`; the
-   `FB.login` callback returns a one-time `authResponse.code`. All three POST to
+  `FB.login` callback returns a one-time `authResponse.code`. All three POST to
    `/api/wa/embedded-signup`.
 3. **Backend** (`MetaOnboardingClient`):
-   - `GET /oauth/access_token?client_id={app_id}&client_secret={app_secret}&code={code}` → business token.
-   - `POST /{waba_id}/subscribed_apps` (Bearer token) → routes the WABA's webhooks to us.
-   - `POST /{phone_number_id}/register` `{messaging_product:"whatsapp", pin}` → enable Cloud API sending (best-effort).
-   - `GET /{waba_id}?fields=name` + `GET /{phone_number_id}?fields=display_phone_number,verified_name` → display metadata.
-   - Persist via `WaAccountService` (encrypted token, 1:1 invariant). The customer types nothing.
+  - `GET /oauth/access_token?client_id={app_id}&client_secret={app_secret}&code={code}` → business token.
+  - `POST /{waba_id}/subscribed_apps` (Bearer token) → routes the WABA's webhooks to us.
+  - `POST /{phone_number_id}/register` `{messaging_product:"whatsapp", pin}` → enable Cloud API sending (best-effort).
+  - `GET /{waba_id}?fields=name` + `GET /{phone_number_id}?fields=display_phone_number,verified_name` → display metadata.
+  - Persist via `WaAccountService` (encrypted token, 1:1 invariant). The customer types nothing.
 
 `POST /api/wa/connect` remains as a manual fallback for test numbers / system-user tokens.
 
 ### Sending a Template Message
+
 ```
 POST /{phone-number-id}/messages
 Authorization: Bearer {access_token}
@@ -680,6 +712,7 @@ Content-Type: application/json
 ```
 
 ### Sending a Free-Text Reply (within 24h window)
+
 ```
 POST /{phone-number-id}/messages
 Authorization: Bearer {access_token}
@@ -693,6 +726,7 @@ Authorization: Bearer {access_token}
 ```
 
 ### Submitting a Template for Approval
+
 ```
 POST /{waba-id}/message_templates
 Authorization: Bearer {access_token}
@@ -706,12 +740,14 @@ Authorization: Bearer {access_token}
 ```
 
 ### Webhook Verification (GET)
+
 ```
 Query params: hub.mode, hub.verify_token, hub.challenge
 Response: hub.challenge as plain text (not JSON)
 ```
 
 ### Webhook Events (POST)
+
 ```json
 {
   "object": "whatsapp_business_account",
@@ -736,6 +772,7 @@ Response: hub.challenge as plain text (not JSON)
 ## 7. API Endpoints
 
 ### Auth
+
 ```
 POST /api/auth/signup          — create org + user + default workspace
 POST /api/auth/login           — returns JWT
@@ -744,6 +781,7 @@ POST /api/auth/logout
 ```
 
 ### Workspaces
+
 ```
 GET    /api/workspaces                    — all workspaces for current user
 POST   /api/workspaces                    — create new workspace
@@ -760,6 +798,7 @@ POST   /api/invitations/accept            — accept an invite by token (public;
 ```
 
 ### WhatsApp Connection
+
 ```
 POST   /api/wa/embedded-signup            — complete Embedded Signup: {code, wabaId, phoneNumberId}
                                             (primary onboarding — see §6)
@@ -771,6 +810,7 @@ DELETE /api/wa/numbers/{id}
 ```
 
 ### Contacts
+
 ```
 GET    /api/contacts                      — list with filter/search/pagination
 POST   /api/contacts                      — create single contact
@@ -785,6 +825,7 @@ GET    /api/contacts/export               — download CSV
 ```
 
 ### Tags
+
 ```
 GET    /api/tags
 POST   /api/tags
@@ -793,6 +834,7 @@ DELETE /api/tags/{id}
 ```
 
 ### Lists
+
 ```
 GET    /api/lists
 POST   /api/lists
@@ -805,6 +847,7 @@ GET    /api/lists/{id}/contacts           — paginated contacts in list
 ```
 
 ### Templates
+
 ```
 GET    /api/templates                     — filter by status, category
 POST   /api/templates                     — create + auto-submit to Meta
@@ -816,6 +859,7 @@ POST   /api/templates/sync                — pull latest status from Meta
 ```
 
 ### Campaigns
+
 ```
 GET    /api/campaigns                     — list with pagination
 POST   /api/campaigns                     — create draft
@@ -830,6 +874,7 @@ GET    /api/campaigns/{id}/contacts       — per-contact status table
 ```
 
 ### Conversations (Inbox)
+
 ```
 GET    /api/conversations                 — list, filter by status/agent/tag
 GET    /api/conversations/{id}
@@ -843,6 +888,7 @@ GET    /api/inbox/stream                  — SSE endpoint, produces text/event-
 ```
 
 ### Messages
+
 ```
 POST   /api/conversations/{id}/messages   — send reply (free text or template)
 GET    /api/quick-replies                 — list quick replies
@@ -852,12 +898,14 @@ DELETE /api/quick-replies/{id}
 ```
 
 ### Webhook
+
 ```
 GET    /webhook                           — Meta verification (public)
 POST   /webhook                           — Meta event handler (public, signature-verified)
 ```
 
 ### Dashboard
+
 ```
 GET    /api/dashboard/summary             — key metrics for date range
 GET    /api/dashboard/campaigns           — recent campaigns with stats
@@ -868,6 +916,7 @@ GET    /api/dashboard/campaigns           — recent campaigns with stats
 ## 8. Key Implementation Patterns
 
 ### Multi-tenant Service Pattern
+
 ```java
 // Every service method follows this pattern
 public Contact getContact(UUID contactId, UUID workspaceId) {
@@ -878,6 +927,7 @@ public Contact getContact(UUID contactId, UUID workspaceId) {
 ```
 
 ### JWT Extraction in Controllers
+
 ```java
 // SecurityUtils helper
 public static UUID getCurrentWorkspaceId(Authentication auth) {
@@ -894,6 +944,7 @@ public Page<ContactDto> list(Authentication auth, Pageable pageable) {
 ```
 
 ### Atomic Campaign Counter Updates
+
 ```java
 // Avoid race conditions — use atomic DB increments
 @Modifying
@@ -906,6 +957,7 @@ void incrementRead(@Param("id") UUID id);
 ```
 
 ### SSE Push Pattern
+
 ```java
 @Service
 public class SseService {
@@ -936,6 +988,7 @@ public class SseService {
 ```
 
 ### Webhook Deduplication
+
 ```java
 public void handleInbound(InboundMessage msg, WaPhoneNumber phoneNumber) {
     // Always check first — Meta sends duplicate webhook events
@@ -947,6 +1000,7 @@ public void handleInbound(InboundMessage msg, WaPhoneNumber phoneNumber) {
 ```
 
 ### Contact Import (CSV via S3)
+
 ```java
 // 1. Controller: get presigned S3 upload URL
 // 2. Frontend: upload CSV directly to S3
@@ -961,6 +1015,7 @@ public void handleInbound(InboundMessage msg, WaPhoneNumber phoneNumber) {
 ## 9. Application Configuration
 
 ### application.yml
+
 ```yaml
 spring:
   application:
@@ -1021,6 +1076,7 @@ thread-pool:
 ```
 
 ### application-local.yml
+
 ```yaml
 spring:
   datasource:
@@ -1058,6 +1114,7 @@ logging:
 ## 10. Local Development Setup
 
 ### docker-compose.yml (place in project root)
+
 ```yaml
 version: '3.8'
 services:
@@ -1102,6 +1159,7 @@ volumes:
 ```
 
 ### localstack-init/init.sh
+
 ```bash
 #!/bin/bash
 awslocal sqs create-queue --queue-name broadcast-queue --region ap-south-1
@@ -1110,6 +1168,7 @@ echo "LocalStack resources created."
 ```
 
 ### Daily dev commands
+
 ```bash
 # Start all local services
 docker compose up -d
@@ -1125,13 +1184,16 @@ ngrok http 8080
 ```
 
 ### Local service URLs
-| Service | URL |
-|---|---|
-| Next.js | http://localhost:3000 |
-| Spring Boot | http://localhost:8080 |
-| Postgres | localhost:5432 |
-| LocalStack | http://localhost:4566 |
-| Mailpit (email UI) | http://localhost:8025 |
+
+
+| Service            | URL                                            |
+| ------------------ | ---------------------------------------------- |
+| Next.js            | [http://localhost:3000](http://localhost:3000) |
+| Spring Boot        | [http://localhost:8080](http://localhost:8080) |
+| Postgres           | localhost:5432                                 |
+| LocalStack         | [http://localhost:4566](http://localhost:4566) |
+| Mailpit (email UI) | [http://localhost:8025](http://localhost:8025) |
+
 
 ---
 
@@ -1151,6 +1213,7 @@ Week 8: Convert to paid — target ₹25k MRR
 ```
 
 ### Build Order Within Each Feature
+
 1. Flyway migration SQL (if new tables needed)
 2. JPA Entity classes
 3. Spring Data Repository interfaces
@@ -1161,6 +1224,7 @@ Week 8: Convert to paid — target ₹25k MRR
 ---
 
 ## 12. Post-MVP Features (Do Not Build in Weeks 1–8)
+
 - Chatbot / no-code flow builder
 - Shopify / WooCommerce integration
 - AI reply suggestions
@@ -1183,3 +1247,4 @@ Week 8: Convert to paid — target ₹25k MRR
 6. **Return 200 to Meta webhook within 5 seconds** — always process async
 7. **Verify X-Hub-Signature-256 on every POST /webhook** — reject 403 if invalid
 8. **Contacts from different workspaces are completely isolated** — every query includes workspace_id filter
+
