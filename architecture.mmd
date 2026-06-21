@@ -1,12 +1,48 @@
+%% High-level data flow (HLD). Mirrors ARCHITECTURE.md §0 — keep the two in sync.
+%% Two symmetric, SQS-backed message paths: outbound campaign fan-out and inbound webhooks.
 flowchart LR
-  Client["Client"]
-  Server["Server"]
-  DB["PostgreSQL DB"]
-  S3["AWS S3"]
-  Queue["Queue"]
+  subgraph Client["Frontend / Admin"]
+    UI["Next.js app"]
+  end
 
-  Client --> Server
-  Server --> DB
-  Server --> S3
-  Server --> Queue
-  Queue --> Server
+  subgraph App["Spring Boot API (single instance, MVP)"]
+    CtrlApi["REST controllers\n/api/** (JWT)"]
+    CampaignSvc["CampaignService"]
+    BcProducer["SqsBroadcastProducer"]
+    BcConsumer["BroadcastConsumer\n@SqsListener"]
+    WebhookCtrl["WhatsAppWebhookController\nPOST /webhook"]
+    Gateway["InboundWebhookGateway\n@Async webhookExecutor"]
+    Worker["InboundWebhookConsumer →\nInboundWebhookProcessor\n@SqsListener"]
+    Processors["Message / Status /\nTemplate / PhoneNumber\nprocessors (+ FlowEngine)"]
+    SSE["SseService\n(live inbox push)"]
+  end
+
+  DB[("PostgreSQL\n(workspace-scoped)")]
+  S3[("AWS S3\nmedia + CSV import")]
+  BQueue["AWS SQS\nbroadcast-queue"]
+  WQueue["AWS SQS\nwebhook-inbound-queue"]
+  Meta["Meta Cloud API\ngraph.facebook.com"]
+
+  UI -->|REST + JWT| CtrlApi
+  UI <-->|SSE stream| SSE
+  CtrlApi --> CampaignSvc
+  CampaignSvc -->|filter unsubscribed,\ninsert campaign_contacts| DB
+  CampaignSvc --> BcProducer
+
+  %% Outbound: durable path
+  BcProducer -->|1 msg per contact| BQueue
+  BQueue --> BcConsumer
+  BcConsumer -->|send template| Meta
+  BcConsumer -->|status + counters| DB
+
+  %% Inbound: durable path
+  Meta -->|webhook POST\n+X-Hub-Signature-256| WebhookCtrl
+  WebhookCtrl -.->|verify, then 200 <5s| Meta
+  WebhookCtrl -->|acceptAsync| Gateway
+  Gateway -->|enqueue raw payload| WQueue
+  WQueue --> Worker
+  Worker -->|route by event type| Processors
+  Processors -->|dedup, record, run flow| DB
+  Processors --> SSE
+
+  CtrlApi --> S3

@@ -4,6 +4,115 @@
 
 ---
 
+## 0. System Overview (HLD)
+
+High-level view of how a request moves through the system. The detailed per-flow specs live in
+§5 (Architecture Decisions) and §6 (Meta Cloud API Integration); this section is the map that ties
+them together.
+
+### The two message paths
+
+The system has two symmetric, **SQS-backed** message paths — both durable, so a crash never silently
+drops work:
+
+- **Outbound (campaign broadcast).** Campaign sends fan out one message per contact onto
+  `broadcast-queue`. The consumer re-loads everything by id and calls Meta. If the consumer crashes,
+  SQS redelivers unacknowledged messages and `CampaignService.deliver()` is idempotent, so no
+  contact is sent twice and none is dropped.
+- **Inbound (Meta webhooks).** The webhook controller verifies the `X-Hub-Signature-256`, hands the
+  raw body to a thin `@Async("webhookExecutor")` gateway that **enqueues it onto
+  `webhook-inbound-queue`**, and returns `200` immediately (rule 6, <5s). A worker drains the queue
+  and does the heavy lifting — parse, dedup, persist, run flows — routing each event to its
+  processor. Because the payload is parked in SQS before any DB work, a JVM crash mid-processing
+  leaves the message unacknowledged and SQS redelivers it; the per-event processors are idempotent.
+
+```mermaid
+flowchart LR
+  subgraph Client["Frontend / Admin"]
+    UI["Next.js app"]
+  end
+
+  subgraph App["Spring Boot API (single instance, MVP)"]
+    CtrlApi["REST controllers\n/api/**  (JWT)"]
+    CampaignSvc["CampaignService"]
+    BcProducer["SqsBroadcastProducer"]
+    BcConsumer["BroadcastConsumer\n@SqsListener"]
+    WebhookCtrl["WhatsAppWebhookController\nPOST /webhook"]
+    Gateway["InboundWebhookGateway\n@Async webhookExecutor"]
+    Worker["InboundWebhookConsumer →\nInboundWebhookProcessor\n@SqsListener"]
+    Processors["MessageProcessor /\nMessageStatusProcessor /\nTemplateUpdateProcessor /\nPhoneNumberUpdateProcessor\n(+ FlowEngine)"]
+    SSE["SseService\n(live inbox push)"]
+  end
+
+  DB[("PostgreSQL\n(workspace-scoped)")]
+  S3[("AWS S3\nmedia + CSV import")]
+  BQueue["AWS SQS\nbroadcast-queue"]
+  WQueue["AWS SQS\nwebhook-inbound-queue"]
+  Meta["Meta Cloud API\ngraph.facebook.com"]
+
+  UI -->|REST + JWT| CtrlApi
+  UI <-->|SSE stream| SSE
+  CtrlApi --> CampaignSvc
+  CampaignSvc -->|filter unsubscribed,\ninsert campaign_contacts| DB
+  CampaignSvc --> BcProducer
+
+  %% Outbound: durable path
+  BcProducer -->|1 msg per contact| BQueue
+  BQueue --> BcConsumer
+  BcConsumer -->|send template| Meta
+  BcConsumer -->|status + counters| DB
+
+  %% Inbound: durable path
+  Meta -->|webhook POST\n+X-Hub-Signature-256| WebhookCtrl
+  WebhookCtrl -.->|verify, then 200 <5s| Meta
+  WebhookCtrl -->|acceptAsync| Gateway
+  Gateway -->|enqueue raw payload| WQueue
+  WQueue --> Worker
+  Worker -->|route by event type| Processors
+  Processors -->|dedup, record,\nrun flow| DB
+  Processors --> SSE
+
+  CtrlApi --> S3
+```
+
+### Inbound durability & the processor model
+
+The inbound path is split at the SQS boundary so the two halves can fail independently:
+
+- **Accept (request thread → gateway).** The controller verifies the signature and the gateway does
+  exactly one thing — enqueue the raw, verified payload — then the request returns `200`. No DB work
+  on the request thread keeps it comfortably under the 5-second deadline. (The gateway still rides
+  the `webhookExecutor` pool so an SQS hiccup never blocks the HTTP thread; sizing in `AsyncConfig`.)
+- **Process (worker thread).** `InboundWebhookConsumer` (`@SqsListener`) hands each message to
+  `InboundWebhookProcessor`, which parses the payload and routes every event to the
+  `WebhookEventProcessor` whose `eventType()` matches. Each request type owns one processor —
+  `MessageProcessor`, `MessageStatusProcessor`, `TemplateUpdateProcessor`,
+  `PhoneNumberUpdateProcessor` — so concerns stay isolated and a new event type is just a new
+  processor bean, no `switch` to edit.
+
+**Failure semantics.** A payload that won't parse is non-retryable and dropped (it will never
+parse). A processor that throws propagates out of the worker, the SQS message stays unacknowledged,
+and it is redelivered — safe because processors are idempotent (`wa_message_id` dedup, status
+no-ops). The `webhook.consumer.enabled=false` flag disables the listener in tests, where inbound
+payloads are processed synchronously.
+
+### Component-to-code map
+
+| Concern | Entry point | Key classes |
+| --- | --- | --- |
+| Outbound fan-out | `POST /campaigns/{id}/send` | `CampaignService`, `SqsBroadcastProducer`, `BroadcastConsumer`, `BroadcastMessage` |
+| Inbound accept (async enqueue) | `POST /webhook` | `WhatsAppWebhookController`, `InboundWebhookGateway`, `SqsInboundWebhookProducer`, `InboundWebhookMessage` |
+| Inbound process (worker) | `webhook-inbound-queue` | `InboundWebhookConsumer`, `InboundWebhookProcessor`, `MetaWebhookPayloadParser` |
+| Inbound processors (per event type) | n/a | `WebhookEventProcessor`, `MessageProcessor`, `MessageStatusProcessor`, `TemplateUpdateProcessor`, `PhoneNumberUpdateProcessor` |
+| Async sizing | n/a | `AsyncConfig` (`webhookExecutor`, `importExecutor`) |
+| Live inbox | SSE | `SseService` (§5) |
+| Media / CSV | S3 | Spring Cloud AWS S3 (§8 Contact Import) |
+
+> Multi-tenancy, the 1:1 workspace↔WABA rule, and the 8 non-negotiable business rules apply across
+> both paths. See §5 and §13.
+
+---
+
 ## 1. Product Overview
 
 A WhatsApp marketing SaaS tool that competes with Wati and AiSensy. Allows businesses to:
@@ -583,28 +692,42 @@ For each due campaign: call initiateSend() → SQS fan-out
 
 ### Webhook Processing
 
+Inbound is durable and split at an SQS boundary (see §0). The request thread only verifies and
+enqueues; a worker does the heavy lifting off the queue and fans each event out to a per-type
+processor.
+
 ```
 Meta POST /webhook
     ↓
-1. Verify X-Hub-Signature-256 (HMAC-SHA256 with app secret)
-2. Return 200 immediately — ALWAYS within 5 seconds
-3. @Async("webhookExecutor") processAsync(payload)
+WhatsAppWebhookController
+1. Verify X-Hub-Signature-256 (HMAC-SHA256 with app secret) — 403 if invalid
+2. InboundWebhookGateway.acceptAsync(body)  — @Async("webhookExecutor")
+       → SqsInboundWebhookProducer.enqueue(raw payload) → webhook-inbound-queue
+3. Return 200 immediately — ALWAYS within 5 seconds
+    ↓ ─────────────── async, off the queue ───────────────
+InboundWebhookConsumer (@SqsListener)
     ↓
-Parse phone_number_id → find workspace
-    ↓
-messages[] → handleInbound()
+InboundWebhookProcessor
+    - MetaWebhookPayloadParser.parse(raw) → List<MetaWebhookEvent>
+    - route each event by class to its WebhookEventProcessor:
+        ↓
+MessageProcessor          (InboundMessageEvent)
     - dedup on wa_message_id (Meta sends duplicates)
-    - find or create contact
-    - find or create conversation (unique per phone_number_id + contact_id)
+    - find or create contact / conversation (unique per phone_number_id + contact_id)
     - update last_customer_message_at (24-hour window tracking)
-    - save message
-    - push to SSE clients for this workspace
-    ↓
-statuses[] → handleStatusUpdate()
+    - save message → push to SSE clients for this workspace
+    - run FlowEngine (chatbot / flow replies)
+MessageStatusProcessor    (MessageStatusEvent)
     - update messages.status
-    - if campaign message: update campaign_contacts.status
-    - atomic increment on campaigns counters
+    - if campaign message: update campaign_contacts.status + atomic campaign counters
+TemplateUpdateProcessor   (TemplateStatusEvent)   — approval/quality/category updates
+PhoneNumberUpdateProcessor(PhoneNumberUpdateEvent) — quality rating / verified name
 ```
+
+**Failure semantics.** Unparseable payloads are dropped (non-retryable). A processor that throws
+leaves the SQS message unacknowledged → SQS redelivers it; processors are idempotent, so redelivery
+is safe. Adding a new webhook event type means adding one `WebhookEventProcessor` bean — the router
+discovers it automatically.
 
 ### SSE (Server-Sent Events) for Live Inbox
 
