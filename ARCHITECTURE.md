@@ -729,6 +729,83 @@ leaves the SQS message unacknowledged → SQS redelivers it; processors are idem
 is safe. Adding a new webhook event type means adding one `WebhookEventProcessor` bean — the router
 discovers it automatically.
 
+#### Inbound payload model & dispatch (LLD)
+
+The inbound payload is modelled as **immutable, typed wire DTOs** (Java `record`s) rather than raw
+`Map`/`JsonNode` traversal. The payload reference (`docs/reference/meta-inbound-payloads.md`) is the
+source of truth for the shapes. There are three layers, kept separate on purpose:
+
+1. **Wire DTOs** (`integration/meta/webhook/dto/`) — exactly Meta's JSON, deserialized by Jackson.
+2. **Internal events** (`MetaWebhookEvent` sealed hierarchy) — what the dispatcher routes on.
+3. **Domain** (`messages`, `conversations`, …) — what processors persist.
+
+**Class hierarchy (wire DTOs).** The stable envelope binds fully; the polymorphic message is a
+sealed interface resolved on Meta's `type` discriminator:
+
+```
+WebhookEnvelope
+ └─ Entry(id, time)
+     └─ Change(field, JsonNode value)        // value kept raw: its schema is selected by `field`
+WebhookValue                                  // the `messages`-field value, bound on demand
+ ├─ Metadata(displayPhoneNumber, phoneNumberId)
+ ├─ messages: List<InboundMessage>            // sealed, @JsonTypeInfo on `type`
+ └─ statuses: List<StatusUpdate>              // id, status, recipientId, conversation, pricing, errors
+
+InboundMessage  (sealed interface; from, id, timestamp, type, context, errors)
+ ├─ TextMessage          (text)
+ ├─ MediaMessage         (image|audio|voice|video|document|sticker → MediaObject media())
+ ├─ LocationMessage      (location)
+ ├─ ContactsMessage      (contacts[])
+ ├─ InteractiveMessage   (interactive: button_reply | list_reply | nfm_reply)
+ ├─ ButtonMessage        (button — template quick-reply postback)
+ ├─ ReactionMessage      (reaction)
+ ├─ OrderMessage         (order)
+ ├─ SystemMessage        (system — e.g. user_changed_number)
+ ├─ UnsupportedMessage   (errors[] — type=unsupported)
+ └─ UnknownMessage       (Jackson defaultImpl — any future/unmodelled type)
+```
+
+**Package / class layout** under `integration/meta/webhook/`:
+
+```
+webhook/
+├─ MetaWebhookPayloadParser        — parse: bytes → WebhookEnvelope → List<MetaWebhookEvent> (+ validate)
+├─ InboundMessageContentMapper     — typed InboundMessage → (MessageType, content jsonb) via sealed switch
+├─ InboundWebhookProcessor         — dispatch: registry Map<Class, WebhookEventProcessor> (no switch)
+├─ WebhookEventProcessor<E>        — one bean per event type (Message/Status/Template/PhoneNumber)
+├─ MetaWebhookEvent (sealed)       — InboundMessageEvent | MessageStatusEvent | TemplateStatusEvent
+│                                    | PhoneNumberUpdateEvent | UnsupportedWebhookEvent
+└─ dto/
+   ├─ WebhookEnvelope, WebhookValue
+   ├─ message/   InboundMessage (sealed) + 11 subtypes
+   ├─ message/content/  Text, MediaObject, Location, Interactive, Button, Reaction, Order, Context, …
+   ├─ status/    StatusUpdate (+ Conversation, Pricing)
+   └─ common/    ErrorObject
+```
+
+**Parse → validate → dispatch.** `MetaWebhookPayloadParser` (parse) binds the envelope and validates
+required fields inline (a message missing `id`/`from`, or a status missing `id`/`status`, becomes an
+`UnsupportedWebhookEvent` instead of being dispatched). `InboundWebhookProcessor` (dispatch) routes
+each event by class through a **registry**, not a `switch` — a new event type is a new
+`WebhookEventProcessor` bean. Within `MessageProcessor`, per-subtype content handling is an
+**exhaustive pattern-match over the sealed `InboundMessage`** (the type-safe equivalent of a visitor):
+the compiler forces every new subtype to be handled. `InteractiveMessage` Flow submissions
+(`nfm_reply`) are diverted to `FlowResponseService`; the raw `JsonNode` of each message is retained on
+the event for `FlowEngine`, which consumes JSON.
+
+**Deserialization strategy & forward-compatibility.** The parser uses a hardened copy of the Spring
+`ObjectMapper`: `SNAKE_CASE` naming (so DTOs use idiomatic camelCase), and
+`FAIL_ON_UNKNOWN_PROPERTIES` / `FAIL_ON_INVALID_SUBTYPE` **disabled**. `InboundMessage` is annotated
+`@JsonTypeInfo(use=NAME, include=EXISTING_PROPERTY, property="type", defaultImpl=UnknownMessage)` with
+`@JsonSubTypes` mapping each `type` value. Meta adds fields and message types over time — unknown
+fields are ignored and unknown `type`s fall back to `UnknownMessage`, so deserialization **never
+throws on new input** (which would otherwise loop forever on SQS redelivery).
+
+**Status, errors & ordering.** `failed` status callbacks carry `errors[]`; the first error code is
+persisted to `messages.error_code`. `MessageService.applyStatus` is monotonic (`sent < delivered <
+read < failed`) so out-of-order receipts (e.g. `read` before `delivered`) never regress a message's
+status. Inbound dedup remains on `wa_message_id` (rule 5).
+
 ### SSE (Server-Sent Events) for Live Inbox
 
 - `SseService` maintains `Map<String, List<SseEmitter>>` keyed by `workspaceId`

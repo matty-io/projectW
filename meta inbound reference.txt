@@ -1,0 +1,637 @@
+Meta WhatsApp Business Platform — Webhook Payload Reference
+All webhooks share the top-level envelope:
+json{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        { "value": { ... }, "field": "<WEBHOOK_FIELD>" }
+      ]
+    }
+  ]
+}
+
+1. account_review_update
+Notifies when a WABA has been reviewed against policy guidelines (approved / rejected / deferred / pending).
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": { "decision": "<DECISION>" },
+          "field": "account_review_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+decision: APPROVED | REJECTED | PENDING | DEFERRED
+Example
+json{
+  "entry": [
+    {
+      "id": "102290129340398",
+      "time": 1739321024,
+      "changes": [
+        { "value": { "decision": "APPROVED" }, "field": "account_review_update" }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+
+2. account_update
+Notifies of WABA changes: verification submission, sharing/unsharing with partners, policy/terms violations, offboarding, reconnection, deletion, pricing tier, etc. The value.event field drives which sub-objects appear.
+event values: ACCOUNT_DELETED, ACCOUNT_RESTRICTION, ACCOUNT_VIOLATION, AD_ACCOUNT_LINKED, AUTH_INTL_PRICE_ELIGIBILITY_UPDATE, BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE, DISABLED_UPDATE, MM_LITE_TERMS_SIGNED, PARTNER_ADDED, PARTNER_APP_INSTALLED, PARTNER_APP_UNINSTALLED, PARTNER_CLIENT_CERTIFICATION_STATUS_UPDATE, PARTNER_REMOVED, VOLUME_BASED_PRICING_TIER_UPDATE, ACCOUNT_OFFBOARDED, ACCOUNT_RECONNECTED
+Full syntax (with conditional blocks)
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "country": "<COUNTRY_CODE>",            // BUSINESS_PRIMARY_LOCATION_COUNTRY_UPDATE only
+            "event": "<EVENT>",
+
+            // AD_ACCOUNT_LINKED only
+            "waba_info": {
+              "waba_id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+              "ad_account_linked": "<AD_ACCOUNT_ID>",
+              "owner_business_id": "<BUSINESS_PORTFOLIO_ID>"
+            },
+
+            // ACCOUNT_VIOLATION only
+            "violation_info": { "violation_type": "<VIOLATION_TYPE>" },
+
+            // AUTH_INTL_PRICE_ELIGIBILITY_UPDATE only
+            "auth_international_rate_eligibility": {
+              "exception_countries": [
+                { "country_code": "<EXCEPTION_COUNTRY_CODE>", "start_time": <EXCEPTION_START_TIME> }
+              ],
+              "start_time": <START_TIME>
+            },
+
+            // DISABLED_UPDATE only
+            "ban_info": { "waba_ban_state": "<WABA_BAN_STATE>", "waba_ban_date": "<WABA_BAN_DATE>" },
+
+            // VOLUME_BASED_PRICING_TIER_UPDATE only
+            "volume_tier_info": {
+              "tier_update_time": <TIER_UPDATE_TIME>,
+              "pricing_category": "<PRICING_CATEGORY>",
+              "tier": "<TIER>",
+              "effective_month": "<EFFECTIVE_MONTH>",
+              "region": "<REGION>"
+            },
+
+            // PARTNER_* events
+            "waba_info": {
+              "waba_id": "<CUSTOMER_WABA_ID>",
+              "owner_business_id": "<CUSTOMER_BUSINESS_PORTFOLIO_ID>",
+              "partner_app_id": "<PARTNER_APP_ID>",      // PARTNER_APP_INSTALLED / UNINSTALLED
+              "solution_id": "<SOLUTION_ID>",
+              "solution_partner_business_ids": ["<PARTNER_IDS>"]
+            },
+
+            // PARTNER_REMOVED (Business app + Cloud API) only
+            "disconnection_info": { "reason": "<DISCONNECTION_REASON>", "initiated_by": "<DISCONNECTION_INITIATED_BY>" },
+
+            // PARTNER_CLIENT_CERTIFICATION_STATUS_UPDATE only
+            "partner_client_certification_info": {
+              "client_business_id": "<CUSTOMER_BUSINESS_PORTFOLIO_ID>",
+              "status": "<STATUS>",
+              "rejection_reasons": ["<REJECTION_REASONS>"]
+            },
+
+            // ACCOUNT_RESTRICTION only
+            "restriction_info": [
+              { "restriction_type": "<RESTRICTION_TYPE>", "expiration": <RESTRICTION_EXPIRATION>, "remediation": "<REMEDIATION_STEPS>" }
+            ]
+          },
+          "field": "account_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+Example — Account restriction
+json{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "102290129340398",
+      "time": 1641330498,
+      "changes": [
+        {
+          "value": {
+            "event": "ACCOUNT_RESTRICTION",
+            "restriction_info": [
+              { "restriction_type": "RESTRICTED_BIZ_INITIATED_MESSAGING", "expiration": 1641330498 },
+              { "restriction_type": "RESTRICTED_ADD_PHONE_NUMBER_ACTION", "expiration": 1641330498 }
+            ]
+          },
+          "field": "account_update"
+        }
+      ]
+    }
+  ]
+}
+Example — Partner added
+json{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "2949482758682047",
+      "time": 1744823932,
+      "changes": [
+        {
+          "value": {
+            "event": "PARTNER_ADDED",
+            "waba_info": {
+              "waba_id": "980198427658004",
+              "owner_business_id": "2329417887457253",
+              "solution_id": "1715120619246906",
+              "solution_partner_business_ids": ["2949482758682047", "520744086200222"]
+            }
+          },
+          "field": "account_update"
+        }
+      ]
+    }
+  ]
+}
+Other event payloads follow the same pattern with only their relevant sub-object, e.g. {"event":"ACCOUNT_DELETED"}, {"event":"ACCOUNT_OFFBOARDED"}, {"event":"ACCOUNT_RECONNECTED"}, {"event":"DISABLED_UPDATE","ban_info":{...}}, {"event":"VOLUME_BASED_PRICING_TIER_UPDATE","volume_tier_info":{...}}.
+
+3. business_capability_update
+Notifies of WABA / business portfolio capability changes (messaging limits, phone number limits).
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "max_daily_conversation_per_phone": <INT>,         // removed Feb 2026 — use field below
+            "max_daily_conversations_per_business": <TIER>,    // TIER_250 | TIER_2K | TIER_10K | TIER_100K | TIER_UNLIMITED
+            "max_phone_numbers_per_business": <INT>,           // only if per_phone == 250
+            "max_phone_numbers_per_waba": <INT>                // only if per_phone != 250
+          },
+          "field": "business_capability_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+Example
+json{
+  "entry": [
+    {
+      "id": "524126980791429",
+      "time": 1739321024,
+      "changes": [
+        {
+          "value": { "max_daily_conversations_per_business": 2000, "max_phone_numbers_per_waba": 25 },
+          "field": "business_capability_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+
+4. flows
+WhatsApp Flows webhooks. Two categories: the Flow response message (delivered via the messages webhook) and Flow status/performance alerts (field: "flows").
+event values: FLOW_STATUS_CHANGE, CLIENT_ERROR_RATE, ENDPOINT_ERROR_RATE, ENDPOINT_LATENCY, ENDPOINT_AVAILABILITY, FLOW_VERSION_EXPIRY_WARNING
+Status values: DRAFT | PUBLISHED | DEPRECATED | BLOCKED | THROTTLED
+Flow response message (arrives via messages webhook)
+json{
+  "messages": [{
+    "context": { "from": "16315558151", "id": "gBGGEiRVVgBPAgm7FUgc73noXjo" },
+    "from": "<USER_ACCOUNT_NUMBER>",
+    "id": "<MESSAGE_ID>",
+    "type": "interactive",
+    "interactive": {
+      "type": "nfm_reply",
+      "nfm_reply": {
+        "name": "flow",
+        "body": "Sent",
+        "response_json": "{\"flow_token\": \"<FLOW_TOKEN>\", \"optional_param1\": \"<value1>\"}"
+      }
+    },
+    "timestamp": "<MESSAGE_SEND_TIMESTAMP>"
+  }]
+}
+Status change
+json{
+  "entry": [
+    {
+      "id": "644600416743275",
+      "time": 1684969340,
+      "changes": [
+        {
+          "value": {
+            "event": "FLOW_STATUS_CHANGE",
+            "message": "Flow Webhook 3 changed status from DRAFT to PUBLISHED",
+            "flow_id": "6627390910605886",
+            "old_status": "DRAFT",
+            "new_status": "PUBLISHED"
+          },
+          "field": "flows"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+Client error rate (thresholds 5/10/50%, 60-min window)
+json{
+  "entry": [{
+    "id": "106181168862417",
+    "time": 1674160476,
+    "changes": [{
+      "value": {
+        "event": "CLIENT_ERROR_RATE",
+        "message": "The flow client request error rate has reached the 5% threshold...",
+        "flow_id": "691244242662581",
+        "error_rate": 14.28,
+        "threshold": 10,
+        "alert_state": "ACTIVATED",
+        "errors": [
+          { "error_type": "INVALID_SCREEN_TRANSITION", "error_rate": 66.66, "error_count": 2 },
+          { "error_type": "PUBLIC_KEY_MISSING", "error_rate": 33.33, "error_count": 1 }
+        ]
+      },
+      "field": "flows"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+Endpoint error rate — same shape as above with "event": "ENDPOINT_ERROR_RATE" (thresholds 5/10/50%, 30-min window).
+Endpoint latency (p90 thresholds 1s/5s/7s, 30-min window)
+json{
+  "entry": [{
+    "id": "106181168862417",
+    "time": 1674160476,
+    "changes": [{
+      "value": {
+        "event": "ENDPOINT_LATENCY",
+        "message": "Flow endpoint latency has reached the p90 threshold...",
+        "flow_id": "691244242662581",
+        "p90_latency": 8000,
+        "p50_latency": 500,
+        "requests_count": 34,
+        "threshold": 7000,
+        "alert_state": "ACTIVATED"
+      },
+      "field": "flows"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+Endpoint availability (below 90% threshold, 10-min window)
+json{
+  "entry": [{
+    "id": "106181168862417",
+    "time": 1674160476,
+    "changes": [{
+      "value": {
+        "event": "ENDPOINT_AVAILABILITY",
+        "message": "The flow endpoint availability has breached the 90% threshold...",
+        "flow_id": "12345678",
+        "alert_state": "ACTIVATED",
+        "availability": 75,
+        "threshold": 90
+      },
+      "field": "flows"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+Flow version freeze/expiry warning
+json{
+  "entry": [{
+    "id": "644600416743275",
+    "time": 1684969340,
+    "changes": [{
+      "value": {
+        "event": "FLOW_VERSION_EXPIRY_WARNING",
+        "warning": "Your current Flow version will freeze in 21 days...",
+        "flow_id": "6627390910605886"
+      },
+      "field": "flows"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+
+5. message_template_components_update
+Notifies of changes to a template's components (triggered when a template is edited).
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "message_template_id": <TEMPLATE_ID>,
+            "message_template_name": "<TEMPLATE_NAME>",
+            "message_template_language": "<TEMPLATE_LANGUAGE_AND_LOCALE_CODE>",
+            "message_template_element": "<TEMPLATE_BODY_TEXT>",
+            "message_template_title": "<TEMPLATE_HEADER_TEXT>",     // if text header
+            "message_template_footer": "<TEMPLATE_FOOTER_TEXT>",    // if footer
+            "message_template_buttons": [                            // if url/phone buttons
+              {
+                "message_template_button_type": "<BUTTON_TYPE>",
+                "message_template_button_text": "<BUTTON_LABEL_TEXT>",
+                "message_template_button_url": "<BUTTON_URL>",            // url buttons
+                "message_template_button_phone_number": "<BUTTON_PHONE_NUMBER>"  // phone buttons
+              }
+            ]
+          },
+          "field": "message_template_components_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+BUTTON_TYPE: CATALOG, COPY_CODE, EXTENSION, FLOW, MPM, ORDER_DETAILS, OTP, PHONE_NUMBER, POSTBACK, REMINDER, SEND_LOCATION, SPM, QUICK_REPLY, URL, VOICE_CALL
+Example
+json{
+  "entry": [{
+    "id": "102290129340398",
+    "time": 1751250234,
+    "changes": [{
+      "value": {
+        "message_template_id": 1315502779341834,
+        "message_template_name": "order_confirmation",
+        "message_template_language": "en_US",
+        "message_template_title": "Your order is confirmed!",
+        "message_template_element": "Thank you for your order, {{1}}! Your order number is {{2}}...",
+        "message_template_footer": "Lucky Shrub: the Succulent Specialists!",
+        "message_template_buttons": [
+          { "message_template_button_type": "PHONE_NUMBER", "message_template_button_text": "Phone support", "message_template_button_phone_number": "+15550783881" },
+          { "message_template_button_type": "URL", "message_template_button_text": "Email support", "message_template_button_url": "https://www.luckyshrub.com/support" }
+        ]
+      },
+      "field": "message_template_components_update"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+
+6. message_template_status_update
+Notifies of status changes to an existing template (approved, rejected, disabled, archived, unarchived).
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "event": "<EVENT>",
+            "message_template_id": <TEMPLATE_ID>,
+            "message_template_name": "<TEMPLATE_NAME>",
+            "message_template_language": "<TEMPLATE_LANGUAGE_AND_LOCALE_CODE>",
+            "reason": "<REASON>",
+            "message_template_category": "<TEMPLATE_CATEGORY>",
+            "disable_info": { "disable_date": "<DISABLE_TIMESTAMP>" },          // if disabled
+            "other_info": { "title": "<TITLE>", "description": "<DESCRIPTION>" }, // if locked/unlocked
+            "rejection_info": { "reason": "<REASON_INFO>", "recommendation": "<RECOMMENDATION_INFO>" } // if INVALID_FORMAT
+          },
+          "field": "message_template_status_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+event: APPROVED, ARCHIVED, UNARCHIVED, DELETED, DISABLED, FLAGGED, IN_APPEAL, LIMIT_EXCEEDED, LOCKED, PAUSED, PENDING, REINSTATED, PENDING_DELETION, REJECTED
+reason: ABUSIVE_CONTENT, CATEGORY_NOT_AVAILABLE (deprecated), INCORRECT_CATEGORY, INVALID_FORMAT, NONE, PROMOTIONAL, SCAM, TAG_CONTENT_MISMATCH, or null
+message_template_category: MARKETING | UTILITY | AUTHENTICATION
+Example — approved
+json{
+  "entry": [{
+    "id": "102290129340398",
+    "time": 1751247548,
+    "changes": [{
+      "value": {
+        "event": "APPROVED",
+        "message_template_id": 1689556908129832,
+        "message_template_name": "order_confirmation",
+        "message_template_language": "en-US",
+        "reason": "NONE",
+        "message_template_category": "UTILITY"
+      },
+      "field": "message_template_status_update"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+Example — rejected (INVALID_FORMAT)
+json{
+  "entry": [{
+    "id": "102290129340398",
+    "time": 1751247548,
+    "changes": [{
+      "value": {
+        "event": "REJECTED",
+        "message_template_id": 1689556908129835,
+        "message_template_name": "abandoned_cart",
+        "message_template_language": "en",
+        "reason": "INVALID_FORMAT",
+        "message_template_category": "MARKETING",
+        "rejection_info": {
+          "reason": "Your template has parameters placed next to each other (like {{1}}{{2}}) without text or punctuation between them.",
+          "recommendation": "Separate parameters with descriptive text and ensure each parameter is clearly contextualized."
+        }
+      },
+      "field": "message_template_status_update"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+
+7. messages
+Describes inbound user messages and the status of outbound business messages. field is always messages. Two distinct shapes:
+Incoming message (contains messages array)
+json{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "102290129340398",
+    "changes": [{
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": { "display_phone_number": "15550783881", "phone_number_id": "106540352242922" },
+        "contacts": [{ "profile": { "name": "Sheena Nelson" }, "wa_id": "16505551234" }],
+        "messages": [{
+          "from": "16505551234",
+          "id": "wamid.HBgLMTY1MDM4Nzk0MzkVAgASGBQzQTRBNjU5OUFFRTAzODEwMTQ0RgA=",
+          "timestamp": "1749416383",
+          "type": "text",
+          "text": { "body": "Does it come in another color?" }
+        }]
+      },
+      "field": "messages"
+    }]
+  }]
+}
+The objects in the messages array vary by type (text, image, interactive, location, etc.) — each type has its own dedicated reference.
+Outgoing message status (contains statuses array)
+json{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "102290129340398",
+    "changes": [{
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": { "display_phone_number": "15550783881", "phone_number_id": "106540352242922" },
+        "statuses": [{
+          "id": "wamid.HBgLMTY1MDM4Nzk0MzkVAgARGBI3MTE5MjVBOTE3MDk5QUVFM0YA",
+          "status": "delivered",
+          "timestamp": "1750263773",
+          "recipient_id": "16505551234",
+          "conversation": { "id": "6ceb9d929c9bdc4f90e967a32f8639b4", "origin": { "type": "service" } },
+          "pricing": { "billable": true, "pricing_model": "CBP", "category": "service" }
+        }]
+      },
+      "field": "messages"
+    }]
+  }]
+}
+status: up to three webhooks per outbound message (sent, delivered, read).
+Errors appear in three places: system/app/account-level at value.errors; incoming message errors in messages.errors (type: unsupported); outgoing errors in statuses.errors.
+
+8. phone_number_name_update
+Notifies of business phone number display-name verification outcomes.
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "display_phone_number": "<BUSINESS_DISPLAY_PHONE_NUMBER>",
+            "decision": "<DECISION>",
+            "requested_verified_name": "<REQUESTED_DISPLAY_NAME>",
+            "rejection_reason": "<REJECTION_REASON>"
+          },
+          "field": "phone_number_name_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+decision: APPROVED | DEFERRED | PENDING | REJECTED
+rejection_reason: NAME_EMPLOYEE_ISSUE, NAME_ENDCLIENT_NOTRELATED, NAME_FORMAT_UNACCEPTABLE, NAME_INDIVIDUAL_ISSUE, NAME_NOT_CONSISTENT, UNKNOWN, or null (accepted)
+Example
+json{
+  "entry": [{
+    "id": "102290129340398",
+    "time": 1739321024,
+    "changes": [{
+      "value": {
+        "display_phone_number": "15550783881",
+        "decision": "APPROVED",
+        "requested_verified_name": "Lucky Shrub",
+        "rejection_reason": null
+      },
+      "field": "phone_number_name_update"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+
+9. phone_number_quality_update
+Notifies of changes to a business phone number's throughput level / messaging limit.
+Syntax
+json{
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "value": {
+            "display_phone_number": "<BUSINESS_DISPLAY_PHONE_NUMBER>",
+            "event": "<EVENT>",
+            "old_limit": "<OLD_LIMIT>",        // only for messaging limit changes (removed Feb 2026)
+            "current_limit": "<CURRENT_LIMIT>", // removed Feb 2026 — use field below
+            "max_daily_conversations_per_business": "<MAX_DAILY_MESSAGES_LIMIT>"
+          },
+          "field": "phone_number_quality_update"
+        }
+      ]
+    }
+  ],
+  "object": "whatsapp_business_account"
+}
+event: ONBOARDING | THROUGHPUT_UPGRADE
+Tier values: TIER_50, TIER_250, TIER_2K, TIER_10K, TIER_100K, TIER_NOT_SET, TIER_UNLIMITED
+Example
+json{
+  "entry": [{
+    "id": "102290129340398",
+    "time": 1748454394,
+    "changes": [{
+      "value": {
+        "display_phone_number": "15550783881",
+        "event": "THROUGHPUT_UPGRADE",
+        "current_limit": "TIER_UNLIMITED"
+      },
+      "field": "phone_number_quality_update"
+    }]
+  }],
+  "object": "whatsapp_business_account"
+}
+
+10. template_category_update
+Notifies of changes to a template's category (impending automated change, or completed change).
+Syntax
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "<WHATSAPP_BUSINESS_ACCOUNT_ID>",
+      "time": <WEBHOOK_TRIGGER_TIMESTAMP>,
+      "changes": [
+        {
+          "field": "template_category_update",
+          "value": {
+            "message_template_id": <TEMPLATE_ID>,
+            "message_template_name": "<TEMPLATE_NAME>",
+            "message_template_language": "<TEMPLATE_LANGUAGE>",
+
+            <!-- impending category change notifications only -->
+            "correct_category": "<CORRECT_CATEGORY>",
+            "new_category": "<CURRENT_CATEGORY>",
+            "category_update_timestamp": <CATEGORY_UPDATE_TIMESTAMP>
+
+            <!-- completed category change notifications only -->
+            "previous_category": "<PREVIOUS_CATEGORY>",
+            "new_category": "<NEW_CATEGORY>"
+
+          }
+        }
+      ]
+    }
+  ]
+}
